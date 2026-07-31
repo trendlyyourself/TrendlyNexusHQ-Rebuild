@@ -3,10 +3,15 @@ import { useState } from "react";
 import Register from "./pages/Register";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
-
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 function App() {
-  const [page, setPage] = useState("home");
 
+const [page, setPage] = useState(
+  window.location.pathname === "/reset-password"
+    ? "reset"
+    : "home"
+);
   return (
     <div className="app">
 
@@ -28,9 +33,16 @@ function App() {
             Register
           </button>
 
+          <button onClick={() => setPage("forgot")}>
+            Forgot Password
+          </button>
+
           <button onClick={() => setPage("dashboard")}>
             Member Portal
           </button>
+<button onClick={() => setPage("reset")}>
+  Reset Password
+</button>
         </nav>
       </header>
 
@@ -59,10 +71,16 @@ function App() {
         <Register />
       )}
 
+      {page === "forgot" && (
+        <ForgotPassword />
+      )}
+
       {page === "dashboard" && (
         <Dashboard />
       )}
-
+{page === "reset" && (
+  <ResetPassword />
+)}
     </div>
   );
 }
