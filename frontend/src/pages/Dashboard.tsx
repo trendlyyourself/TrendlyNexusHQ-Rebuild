@@ -27,11 +27,11 @@ function Dashboard() {
   return (
     <div>
       <h1>
-        Al's Life-size Toys Member Portal
+        Trendly Nexus HQ Member Portal
       </h1>
 
       <p>
-        Powered by Trendly Yourself Automation Engine
+        Powered by Trendly Nexus HQ Automation Engine
       </p>
 
       <section>

@@ -22,7 +22,7 @@ function Login() {
 
   return (
     <div>
-      <h1>Al's Life-size Toys Member Login</h1>
+      <h1>Trendly Nexus HQ Member Login</h1>
 
       <input
         placeholder="Email"

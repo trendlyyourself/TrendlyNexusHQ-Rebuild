@@ -17,7 +17,7 @@ const [page, setPage] = useState(
 
       <header className="navbar">
         <div className="logo">
-          Al's Life-size Toys
+          Trendly Nexus HQ
         </div>
 
         <nav>
@@ -56,8 +56,8 @@ const [page, setPage] = useState(
             </h1>
 
             <p>
-              Al's Life-size Toys powered by
-              Trendly Yourself Automation Engine.
+              Trendly Nexus HQ powered by
+              Trendly Nexus HQ Automation Engine.
             </p>
           </div>
         </section>

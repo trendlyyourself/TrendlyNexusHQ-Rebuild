@@ -20,7 +20,7 @@ function Register() {
 
   return (
     <div>
-      <h1>Create Al's Life-size Toys Account</h1>
+      <h1>Create Trendly Nexus HQ Account</h1>
 
       <input
         placeholder="Email"
