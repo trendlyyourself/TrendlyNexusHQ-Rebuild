@@ -1,0 +1,2 @@
+@import "tailwindcss";
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#050811;color:#eef5ff;font-family:Arial,Helvetica,sans-serif}a{text-decoration:none}button,input{font:inherit}
