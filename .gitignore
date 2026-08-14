@@ -1,2 +1,8 @@
 # Local Netlify folder
 .netlify
+
+# Next.js app
+trendlynexusHQ/trendlynexusHQ/node_modules/
+trendlynexusHQ/trendlynexusHQ/.next/
+trendlynexusHQ/trendlynexusHQ/.env
+trendlynexusHQ/trendlynexusHQ/.env.local

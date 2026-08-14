@@ -1,7 +1,11 @@
-node_modules
-.next
+/node_modules
+/.next
+/.pnp
+.pnp.*
 .env
 .env.local
-.env.production
-.vercel
-npm-debug.log*
+.env*.local
+/tsconfig.tsbuildinfo
+next-env.d.ts
+*.log
+.DS_Store
