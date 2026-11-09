@@ -19,7 +19,7 @@ async function withServer(app, callback) {
 
 function makeApp(usersFile, overrides = {}) {
   return createApp({
-    jwtSecret: "R7v!mQ2#xL9@pT4$kN8^cB6&zF1*wH5",
+    jwtSecret: "R7v!mQ2#xL9@pT4$kN8^cB6&zF1*wH5+qD3%aS9",
     allowedOrigins: ["http://localhost:5173"],
     frontendUrl: "https://localhost:5173",
     usersFile,
@@ -30,7 +30,7 @@ function makeApp(usersFile, overrides = {}) {
 
 test("API refuses to start without a strong JWT secret or explicit CORS origins", () => {
   assert.throws(() => createApp({ jwtSecret: "weak", allowedOrigins: ["http://localhost:5173"], frontendUrl: "http://localhost:5173" }), /32 bytes/);
-  assert.throws(() => createApp({ jwtSecret: "x".repeat(32), allowedOrigins: [], frontendUrl: "http://localhost:5173" }), /CORS_ORIGINS/);
+  assert.throws(() => createApp({ jwtSecret: "R7v!mQ2#xL9@pT4$kN8^cB6&zF1*wH5+qD3%aS9", allowedOrigins: [], frontendUrl: "http://localhost:5173" }), /CORS_ORIGINS/);
   assert.throws(() => createApp({ env: { NODE_ENV: "production" }, jwtSecret: "x".repeat(32), allowedOrigins: ["http://localhost:5173"], frontendUrl: "https://localhost:5173" }), /HTTPS in production/);
 });
 
