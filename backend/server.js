@@ -100,7 +100,10 @@ function createApp(options = {}) {
   app.use(express.json({ limit: "32kb" }));
 
   function createToken(user) {
-    return jwt.sign({ id: user.id, email: user.email }, jwtSecret, { expiresIn: "7d" });
+    const tokenVersion = Number.isSafeInteger(user.tokenVersion) && user.tokenVersion >= 0
+      ? user.tokenVersion
+      : 0;
+    return jwt.sign({ id: user.id, email: user.email, tokenVersion }, jwtSecret, { expiresIn: "7d" });
   }
 
   function authenticate(req, res, next) {
@@ -109,7 +112,15 @@ function createApp(options = {}) {
       return res.status(401).json({ message: "Authentication required" });
     }
     try {
-      req.user = jwt.verify(header.slice(7), jwtSecret);
+      const payload = jwt.verify(header.slice(7), jwtSecret);
+      const currentUser = loadUsers(usersFile).find((user) => user.id === payload.id);
+      const currentVersion = currentUser && Number.isSafeInteger(currentUser.tokenVersion) && currentUser.tokenVersion >= 0
+        ? currentUser.tokenVersion
+        : 0;
+      if (!currentUser || payload.tokenVersion !== currentVersion) {
+        return res.status(401).json({ message: "Invalid or expired token" });
+      }
+      req.user = { id: currentUser.id, email: currentUser.email };
       return next();
     } catch {
       return res.status(401).json({ message: "Invalid or expired token" });
@@ -140,6 +151,7 @@ function createApp(options = {}) {
         id: crypto.randomUUID(),
         email,
         passwordHash,
+        tokenVersion: 0,
         createdAt: new Date().toISOString(),
       });
       saveUsers(usersFile, users);
@@ -234,6 +246,7 @@ function createApp(options = {}) {
       }
 
       user.passwordHash = await bcrypt.hash(newPassword, 12);
+      user.tokenVersion = (Number.isSafeInteger(user.tokenVersion) && user.tokenVersion >= 0 ? user.tokenVersion : 0) + 1;
       delete user.resetTokenHash;
       delete user.resetTokenExpires;
       delete user.resetToken;

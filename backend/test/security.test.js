@@ -7,9 +7,11 @@ const {
   matchesResetToken,
 } = require("../security");
 
-test("JWT secret must be at least 32 bytes", () => {
+test("JWT secret rejects short, placeholder, and low-diversity values", () => {
   assert.throws(() => requireStrongSecret("short"), /32 bytes/);
-  const secret = "x".repeat(32);
+  assert.throws(() => requireStrongSecret("x".repeat(32)), /character diversity and entropy/);
+  assert.throws(() => requireStrongSecret("replace-with-a-unique-random-secret-of-at-least-32-characters"), /placeholder/);
+  const secret = "R7v!mQ2#xL9@pT4$kN8^cB6&zF1*wH5";
   assert.equal(requireStrongSecret(secret), secret);
 });
 

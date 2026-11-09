@@ -4,6 +4,26 @@ function requireStrongSecret(value) {
   if (typeof value !== "string" || Buffer.byteLength(value, "utf8") < 32) {
     throw new Error("JWT_SECRET must contain at least 32 bytes");
   }
+
+  const normalized = value.trim().toLowerCase();
+  if (/^(change[-_ ]?me|replace[-_ ]?with|your[-_ ]?(secret|key)|example|placeholder|password|secret)([-_ ]|$)/i.test(normalized)) {
+    throw new Error("JWT_SECRET must not be a placeholder value");
+  }
+
+  const frequencies = new Map();
+  for (const character of value) {
+    frequencies.set(character, (frequencies.get(character) || 0) + 1);
+  }
+  const distinctCharacters = frequencies.size;
+  const length = value.length;
+  const entropy = [...frequencies.values()].reduce((total, count) => {
+    const probability = count / length;
+    return total - probability * Math.log2(probability);
+  }, 0);
+
+  if (distinctCharacters < 10 || entropy < 3) {
+    throw new Error("JWT_SECRET must have sufficient character diversity and entropy");
+  }
   return value;
 }
 

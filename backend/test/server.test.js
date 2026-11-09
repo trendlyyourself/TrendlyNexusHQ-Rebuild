@@ -19,7 +19,7 @@ async function withServer(app, callback) {
 
 function makeApp(usersFile, overrides = {}) {
   return createApp({
-    jwtSecret: "unit-test-secret-value-at-least-32-bytes",
+    jwtSecret: "R7v!mQ2#xL9@pT4$kN8^cB6&zF1*wH5",
     allowedOrigins: ["http://localhost:5173"],
     frontendUrl: "https://localhost:5173",
     usersFile,
@@ -60,6 +60,9 @@ test("registration, login, and one-time hashed password reset work without loggi
         body: JSON.stringify({ email: "user@example.com", password: "initial-password" }),
       });
       assert.equal(login.status, 200);
+      const oldLoginPayload = await login.json();
+      const oldAccessToken = oldLoginPayload.token;
+      assert.ok(oldAccessToken);
 
       const forgot = await fetch(base + "/auth/forgot-password", {
         method: "POST",
@@ -84,6 +87,11 @@ test("registration, login, and one-time hashed password reset work without loggi
       });
       assert.equal(reset.status, 200);
 
+      const oldSession = await fetch(base + "/projects", {
+        headers: { authorization: "Bearer " + oldAccessToken },
+      });
+      assert.equal(oldSession.status, 401);
+
       const replay = await fetch(base + "/auth/reset-password", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -97,6 +105,11 @@ test("registration, login, and one-time hashed password reset work without loggi
         body: JSON.stringify({ email: "user@example.com", password: "replacement-password" }),
       });
       assert.equal(newLogin.status, 200);
+      const newLoginPayload = await newLogin.json();
+      const newSession = await fetch(base + "/projects", {
+        headers: { authorization: "Bearer " + newLoginPayload.token },
+      });
+      assert.equal(newSession.status, 200);
     });
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
