@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: nexus-backend-security-\${{ github.ref }}
+  group: nexus-backend-security-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
