@@ -31,6 +31,7 @@ function makeApp(usersFile, overrides = {}) {
 test("API refuses to start without a strong JWT secret or explicit CORS origins", () => {
   assert.throws(() => createApp({ jwtSecret: "weak", allowedOrigins: ["http://localhost:5173"], frontendUrl: "http://localhost:5173" }), /32 bytes/);
   assert.throws(() => createApp({ jwtSecret: "x".repeat(32), allowedOrigins: [], frontendUrl: "http://localhost:5173" }), /CORS_ORIGINS/);
+  assert.throws(() => createApp({ env: { NODE_ENV: "production" }, jwtSecret: "x".repeat(32), allowedOrigins: ["http://localhost:5173"], frontendUrl: "https://localhost:5173" }), /HTTPS in production/);
 });
 
 test("registration, login, and one-time hashed password reset work without logging token data", async () => {
@@ -111,6 +112,45 @@ test("CORS allows only configured origins", async () => {
       assert.equal(allowed.headers.get("access-control-allow-origin"), "http://localhost:5173");
       const denied = await fetch(base + "/", { headers: { Origin: "https://untrusted.example" } });
       assert.equal(denied.headers.get("access-control-allow-origin"), null);
+    });
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+
+test("failed email delivery clears the reset token instead of persisting an unusable credential", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "nexus-mail-failure-"));
+  const usersFile = path.join(directory, "users.json");
+  let attemptedUrl = "";
+  const app = makeApp(usersFile, {
+    sendResetEmail: async ({ resetUrl }) => {
+      attemptedUrl = resetUrl;
+      throw new Error("simulated mail failure");
+    },
+  });
+
+  try {
+    await withServer(app, async (base) => {
+      const register = await fetch(base + "/auth/register", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: "user@example.com", password: "initial-password" }),
+      });
+      assert.equal(register.status, 201);
+
+      const forgot = await fetch(base + "/auth/forgot-password", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: "user@example.com" }),
+      });
+      assert.equal(forgot.status, 200);
+      assert.ok(attemptedUrl);
+
+      const storedUsers = JSON.parse(fs.readFileSync(usersFile, "utf8"));
+      assert.equal(storedUsers[0].resetTokenHash, undefined);
+      assert.equal(storedUsers[0].resetToken, undefined);
+      assert.equal(JSON.stringify(storedUsers).includes(new URL(attemptedUrl).searchParams.get("token")), false);
     });
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });

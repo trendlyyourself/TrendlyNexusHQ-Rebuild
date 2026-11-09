@@ -73,6 +73,9 @@ function createApp(options = {}) {
   const env = options.env || process.env;
   const jwtSecret = requireStrongSecret(options.jwtSecret === undefined ? env.JWT_SECRET : options.jwtSecret);
   const allowedOrigins = parseAllowedOrigins(options.allowedOrigins === undefined ? env.CORS_ORIGINS : options.allowedOrigins);
+  if (env.NODE_ENV === "production" && allowedOrigins.some((origin) => !origin.startsWith("https://"))) {
+    throw new Error("CORS_ORIGINS must use HTTPS in production");
+  }
   const frontendUrl = options.frontendUrl || env.FRONTEND_URL;
   if (!frontendUrl) throw new Error("FRONTEND_URL must be configured");
   const parsedFrontendUrl = new URL(frontendUrl);
@@ -234,7 +237,6 @@ function createApp(options = {}) {
       delete user.resetTokenHash;
       delete user.resetTokenExpires;
       delete user.resetToken;
-      delete user.resetTokenExpires;
       saveUsers(usersFile, users);
       return res.json({ message: "Password updated successfully" });
     } catch {
