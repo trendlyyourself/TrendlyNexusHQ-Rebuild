@@ -21,7 +21,7 @@ function makeApp(usersFile, overrides = {}) {
   return createApp({
     jwtSecret: "unit-test-secret-value-at-least-32-bytes",
     allowedOrigins: ["http://localhost:5173"],
-    frontendUrl: "http://localhost:5173",
+    frontendUrl: "https://localhost:5173",
     usersFile,
     sendResetEmail: async () => {},
     ...overrides,
