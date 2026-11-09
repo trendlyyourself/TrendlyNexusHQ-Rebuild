@@ -13,6 +13,9 @@ function parseAllowedOrigins(value) {
   if (origins.length === 0) throw new Error("CORS_ORIGINS must contain at least one exact origin");
 
   for (const origin of origins) {
+    if (origin.includes("*")) {
+      throw new Error("CORS_ORIGINS must contain exact HTTP(S) origins without paths or wildcards");
+    }
     let parsed;
     try {
       parsed = new URL(origin);
