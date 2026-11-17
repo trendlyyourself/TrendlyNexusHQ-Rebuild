@@ -81,7 +81,7 @@ function evaluateAgentAction(input = {}) {
     }
   }
 
-  if (action === "customer.support.send") {
+  if (action === "compliance.reapprove") {\n    if (!irisApproval || irisApproval.verified !== true || !irisApproval.approvalId ||\n        typeof scope !== "string" || !scope.trim()) {\n      return deny("verified_reapproval_record_required");\n    }\n  }\n\n  if (action === "customer.support.send") {
     if (agent !== "camden") return deny("customer_communication_role_required");
     if (!irisApproval || irisApproval.verified !== true || !irisApproval.approvalId) {
       return deny("iris_voice_check_required");
