@@ -84,6 +84,9 @@ test("production changes require explicitly scoped owner approval and Iris appro
     environment: "production", ownerApproval, irisApproval }).allowed, true);
   assert.equal(evaluateAgentAction({ agent: "addy", action: "production.change", scope: "release:7",
     environment: "production", ownerApproval }).reason, "iris_compliance_approval_required");
+  assert.equal(evaluateAgentAction({ agent: "addy", action: "production.change", scope: "release:7",
+    environment: "production", ownerApproval: { ...ownerApproval, productionExplicit: false }, irisApproval }).reason,
+    "explicit_production_approval_required");
 });
 
 test("middleware fails closed when trusted approval verification fails", async () => {
