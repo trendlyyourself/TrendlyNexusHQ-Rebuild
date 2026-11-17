@@ -187,15 +187,17 @@ function createAgentGovernanceStore(pool, options = {}) {
       throw new Error("Production approval must explicitly authorize the production environment");
     }
     const expiry = requireFutureExpiry(expiresAt, 15 * 60 * 1000);
-    const result = await pool.query(
-      "INSERT INTO agent_owner_approvals (owner_subject, action, scope, environment, production_explicit, reason, expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, action, scope, environment, expires_at",
-      [owner.subject, action, scope, environment, productionExplicit === true, reason.trim(), expiry]
-    );
-    await pool.query(
-      "INSERT INTO agent_audit_events (event_type, action, scope, environment, decision, reason, correlation_id, details) VALUES ('owner.approval_issued',$1,$2,$3,'approved',$4,$5,$6::jsonb)",
-      [action, scope, environment, reason.trim(), crypto.randomUUID(), JSON.stringify({ approvalId: result.rows[0].id, ownerSubject: owner.subject })]
-    );
-    return result.rows[0];
+    return withTransaction(async (client) => {
+      const result = await client.query(
+        "INSERT INTO agent_owner_approvals (owner_subject, action, scope, environment, production_explicit, reason, expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, action, scope, environment, expires_at",
+        [owner.subject, action, scope, environment, productionExplicit === true, reason.trim(), expiry]
+      );
+      await client.query(
+        "INSERT INTO agent_audit_events (event_type, action, scope, environment, decision, reason, correlation_id, details) VALUES ('owner.approval_issued',$1,$2,$3,'approved',$4,$5,$6::jsonb)",
+        [action, scope, environment, reason.trim(), crypto.randomUUID(), JSON.stringify({ approvalId: result.rows[0].id, ownerSubject: owner.subject })]
+      );
+      return result.rows[0];
+    });
   }
 
   async function recordIrisDecision({ identity, decision, action, scope, reason, evidenceRef, expiresAt }) {
@@ -254,15 +256,17 @@ function createAgentGovernanceStore(pool, options = {}) {
     }
     const expiry = requireFutureExpiry(expiresAt, 30 * 24 * 60 * 60 * 1000);
     const grantorSubject = isOwner ? grantor.subject : grantor.identityId;
-    const result = await pool.query(
-      "INSERT INTO agent_delegated_grants (grantor_subject, grantee_agent, action, scope, reason, expires_at, max_uses) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, grantee_agent, action, scope, expires_at, max_uses",
-      [grantorSubject, granteeAgent, action, scope, reason.trim(), expiry, maxUses]
-    );
-    await pool.query(
-      "INSERT INTO agent_audit_events (event_type, actor_agent, action, scope, decision, reason, correlation_id, details) VALUES ('delegation.issued',$1,'task.delegate',$2,'granted',$3,$4,$5::jsonb)",
-      [isAddy ? "addy" : null, scope, reason.trim(), crypto.randomUUID(), JSON.stringify({ grantId: result.rows[0].id, granteeAgent, action, maxUses })]
-    );
-    return result.rows[0];
+    return withTransaction(async (client) => {
+      const result = await client.query(
+        "INSERT INTO agent_delegated_grants (grantor_subject, grantee_agent, action, scope, reason, expires_at, max_uses) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, grantee_agent, action, scope, expires_at, max_uses",
+        [grantorSubject, granteeAgent, action, scope, reason.trim(), expiry, maxUses]
+      );
+      await client.query(
+        "INSERT INTO agent_audit_events (event_type, actor_agent, action, scope, decision, reason, correlation_id, details) VALUES ('delegation.issued',$1,'task.delegate',$2,'granted',$3,$4,$5::jsonb)",
+        [isAddy ? "addy" : null, scope, reason.trim(), crypto.randomUUID(), JSON.stringify({ grantId: result.rows[0].id, granteeAgent, action, maxUses })]
+      );
+      return result.rows[0];
+    });
   }
 
   async function approveSandboxTarget({ owner, targetId, scope, expiresAt }) {
@@ -274,15 +278,17 @@ function createAgentGovernanceStore(pool, options = {}) {
       throw new TypeError("Sandbox target identifier and scope are required");
     }
     const expiry = requireFutureExpiry(expiresAt, 24 * 60 * 60 * 1000);
-    const result = await pool.query(
-      "INSERT INTO agent_sandbox_targets (target_id, environment, approved_by, scope, expires_at) VALUES ($1,'sandbox',$2,$3,$4) RETURNING id, target_id, scope, expires_at",
-      [targetId.trim(), owner.subject, scope, expiry]
-    );
-    await pool.query(
-      "INSERT INTO agent_audit_events (event_type, action, scope, environment, decision, reason, correlation_id, details) VALUES ('sandbox.target_approved','security.scan',$1,'sandbox','approved','Owner approved scoped sandbox target',$2,$3::jsonb)",
-      [scope, crypto.randomUUID(), JSON.stringify({ targetId: result.rows[0].target_id, approvalId: result.rows[0].id })]
-    );
-    return result.rows[0];
+    return withTransaction(async (client) => {
+      const result = await client.query(
+        "INSERT INTO agent_sandbox_targets (target_id, environment, approved_by, scope, expires_at) VALUES ($1,'sandbox',$2,$3,$4) RETURNING id, target_id, scope, expires_at",
+        [targetId.trim(), owner.subject, scope, expiry]
+      );
+      await client.query(
+        "INSERT INTO agent_audit_events (event_type, action, scope, environment, decision, reason, correlation_id, details) VALUES ('sandbox.target_approved','security.scan',$1,'sandbox','approved','Owner approved scoped sandbox target',$2,$3::jsonb)",
+        [scope, crypto.randomUUID(), JSON.stringify({ targetId: result.rows[0].target_id, approvalId: result.rows[0].id })]
+      );
+      return result.rows[0];
+    });
   }
 
 
