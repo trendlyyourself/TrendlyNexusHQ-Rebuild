@@ -149,12 +149,134 @@ function createAgentGovernanceStore(pool, options = {}) {
     );
   }
 
-  async function createComplianceHold({ irisSubject, scope, reason, evidenceRef }) {
+
+  function requireIdentity(identity, expected) {
+    if (!identity || identity.id !== expected || !identity.identityId) {
+      throw new Error("Authenticated " + expected + " identity required");
+    }
+  }
+
+  function requireFutureExpiry(expiresAt, maxMs) {
+    const value = new Date(expiresAt);
+    const delta = value.getTime() - now().getTime();
+    if (!Number.isFinite(delta) || delta <= 0 || delta > maxMs) {
+      throw new TypeError("Expiry must be in the future and within the permitted lifetime");
+    }
+    return value;
+  }
+
+  async function issueOwnerApproval({ owner, action, scope, environment, reason, expiresAt, productionExplicit = false }) {
+    if (!owner || typeof owner.subject !== "string" || typeof options.isOwnerSubject !== "function" ||
+        !(await options.isOwnerSubject(owner.subject))) {
+      throw new Error("Authenticated owner authorization required");
+    }
+    if (!OWNER_RESERVED_ACTIONS.includes(action) || typeof scope !== "string" || !scope.trim() ||
+        typeof environment !== "string" || !environment.trim() || typeof reason !== "string" || !reason.trim()) {
+      throw new TypeError("Exact owner approval action, scope, environment, and reason are required");
+    }
+    const expiry = requireFutureExpiry(expiresAt, 15 * 60 * 1000);
+    const result = await pool.query(
+      "INSERT INTO agent_owner_approvals (owner_subject, action, scope, environment, production_explicit, reason, expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, action, scope, environment, expires_at",
+      [owner.subject, action, scope, environment, productionExplicit === true, reason.trim(), expiry]
+    );
+    await pool.query(
+      "INSERT INTO agent_audit_events (event_type, action, scope, environment, decision, reason, correlation_id, details) VALUES ('owner.approval_issued',$1,$2,$3,'approved',$4,$5,$6::jsonb)",
+      [action, scope, environment, reason.trim(), crypto.randomUUID(), JSON.stringify({ approvalId: result.rows[0].id, ownerSubject: owner.subject })]
+    );
+    return result.rows[0];
+  }
+
+  async function recordIrisDecision({ identity, decision, action, scope, reason, evidenceRef, expiresAt }) {
+    requireIdentity(identity, "iris");
+    if (!["approve", "reapprove", "hold", "reject"].includes(decision) ||
+        typeof scope !== "string" || !scope.trim() || typeof reason !== "string" || !reason.trim()) {
+      throw new TypeError("Iris decision, exact scope, and reason are required");
+    }
+    if (OWNER_RESERVED_ACTIONS.includes(action) && decision === "approve" && !action) {
+      throw new TypeError("Owner-reserved approval must name its action");
+    }
+    const expiry = expiresAt ? requireFutureExpiry(expiresAt, 24 * 60 * 60 * 1000) : null;
+    return withTransaction(async (client) => {
+      const inserted = await client.query(
+        "INSERT INTO agent_iris_decisions (iris_subject, decision, action, scope, reason, evidence_ref, expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id",
+        [identity.identityId, decision, action || null, scope, reason.trim(), evidenceRef || null, expiry]
+      );
+      if (decision === "hold") {
+        const hold = await client.query(
+          "INSERT INTO agent_compliance_holds (iris_subject, scope, reason, evidence_ref) VALUES ($1,$2,$3,$4) RETURNING id",
+          [identity.identityId, scope, reason.trim(), evidenceRef || null]
+        );
+        await client.query(
+          "INSERT INTO agent_audit_events (event_type, actor_agent, actor_identity_id, action, scope, decision, reason, correlation_id, details) VALUES ('compliance.hold','iris',$1,'compliance.stop',$2,'hold',$3,$4,$5::jsonb)",
+          [identity.identityId, scope, reason.trim(), crypto.randomUUID(), JSON.stringify({ holdId: hold.rows[0].id, irisDecisionId: inserted.rows[0].id, evidenceRef: evidenceRef || null })]
+        );
+      } else {
+        await client.query(
+          "INSERT INTO agent_audit_events (event_type, actor_agent, actor_identity_id, action, scope, decision, reason, correlation_id, details) VALUES ('compliance.decision','iris',$1,$2,$3,$4,$5,$6,$7::jsonb)",
+          [identity.identityId, action || "compliance.review", scope, decision, reason.trim(), crypto.randomUUID(), JSON.stringify({ irisDecisionId: inserted.rows[0].id, evidenceRef: evidenceRef || null })]
+        );
+      }
+      return inserted.rows[0];
+    });
+  }
+
+  async function issueDelegatedGrant({ grantor, granteeAgent, action, scope, reason, expiresAt, maxUses = 1 }) {
+    const isOwner = grantor && typeof grantor.subject === "string" &&
+      typeof options.isOwnerSubject === "function" && await options.isOwnerSubject(grantor.subject);
+    const isAddy = grantor && grantor.id === "addy" && grantor.identityId;
+    if (!isOwner && !isAddy) throw new Error("Authenticated owner or Addy grantor required");
+    if (!["addy", "camden"].includes(granteeAgent) ||
+        (granteeAgent === "camden" && !isAddy) ||
+        (granteeAgent === "addy" && !isOwner)) {
+      throw new Error("Grantor is not authorized for this delegation");
+    }
+    const permitted = granteeAgent === "addy"
+      ? ["engineering.write", "operations.execute"]
+      : ["people.update"];
+    if (!permitted.includes(action) || typeof scope !== "string" || !scope.trim() ||
+        typeof reason !== "string" || !reason.trim() || !Number.isSafeInteger(maxUses) || maxUses < 1 || maxUses > 100) {
+      throw new TypeError("Delegation must have an allowed action, exact scope, reason, and bounded use count");
+    }
+    const expiry = requireFutureExpiry(expiresAt, 30 * 24 * 60 * 60 * 1000);
+    const grantorSubject = isOwner ? grantor.subject : grantor.identityId;
+    const result = await pool.query(
+      "INSERT INTO agent_delegated_grants (grantor_subject, grantee_agent, action, scope, reason, expires_at, max_uses) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, grantee_agent, action, scope, expires_at, max_uses",
+      [grantorSubject, granteeAgent, action, scope, reason.trim(), expiry, maxUses]
+    );
+    await pool.query(
+      "INSERT INTO agent_audit_events (event_type, actor_agent, action, scope, decision, reason, correlation_id, details) VALUES ('delegation.issued',$1,'task.delegate',$2,'granted',$3,$4,$5::jsonb)",
+      [isAddy ? "addy" : null, scope, reason.trim(), crypto.randomUUID(), JSON.stringify({ grantId: result.rows[0].id, granteeAgent, action, maxUses })]
+    );
+    return result.rows[0];
+  }
+
+  async function approveSandboxTarget({ owner, targetId, scope, expiresAt }) {
+    if (!owner || typeof owner.subject !== "string" || typeof options.isOwnerSubject !== "function" ||
+        !(await options.isOwnerSubject(owner.subject))) {
+      throw new Error("Authenticated owner authorization required");
+    }
+    if (typeof targetId !== "string" || !targetId.trim() || typeof scope !== "string" || !scope.trim()) {
+      throw new TypeError("Sandbox target identifier and scope are required");
+    }
+    const expiry = requireFutureExpiry(expiresAt, 24 * 60 * 60 * 1000);
+    const result = await pool.query(
+      "INSERT INTO agent_sandbox_targets (target_id, environment, approved_by, scope, expires_at) VALUES ($1,'sandbox',$2,$3,$4) RETURNING id, target_id, scope, expires_at",
+      [targetId.trim(), owner.subject, scope, expiry]
+    );
+    await pool.query(
+      "INSERT INTO agent_audit_events (event_type, action, scope, environment, decision, reason, correlation_id, details) VALUES ('sandbox.target_approved','security.scan',$1,'sandbox','approved','Owner approved scoped sandbox target',$2,$3::jsonb)",
+      [scope, crypto.randomUUID(), JSON.stringify({ targetId: result.rows[0].target_id, approvalId: result.rows[0].id })]
+    );
+    return result.rows[0];
+  }
+
+  async function createComplianceHold({ identity, scope, reason, evidenceRef }) {
+    requireIdentity(identity, "iris");
     if (typeof reason !== "string" || !reason.trim()) throw new TypeError("Hold reason required");
     return withTransaction(async (client) => {
       const hold = await client.query(
         "INSERT INTO agent_compliance_holds (iris_subject, scope, reason, evidence_ref) VALUES ($1,$2,$3,$4) RETURNING id",
-        [irisSubject, scope || "*", reason.trim(), evidenceRef || null]
+        [identity.identityId, scope || "*", reason.trim(), evidenceRef || null]
       );
       await client.query(
         "INSERT INTO agent_audit_events (event_type, actor_agent, action, scope, decision, reason, correlation_id, details) VALUES ('compliance.hold','iris','compliance.stop',$1,'hold',$2,$3,$4::jsonb)",
@@ -164,16 +286,17 @@ function createAgentGovernanceStore(pool, options = {}) {
     });
   }
 
-  async function liftComplianceHold({ holdId, irisSubject, reapprovalDecisionId }) {
+  async function liftComplianceHold({ identity, holdId, reapprovalDecisionId }) {
+    requireIdentity(identity, "iris");
     return withTransaction(async (client) => {
       const decision = await client.query(
         "SELECT id, scope FROM agent_iris_decisions WHERE id=$1 AND decision='reapprove' AND iris_subject=$2 FOR UPDATE",
-        [reapprovalDecisionId, irisSubject]
+        [reapprovalDecisionId, identity.identityId]
       );
       if (!decision.rows[0]) throw new Error("Verified Iris reapproval required");
       const result = await client.query(
-        "UPDATE agent_compliance_holds SET lifted_at=$2, lifted_by=$3, lift_decision_id=$4 WHERE id=$1 AND lifted_at IS NULL AND (scope='*' OR scope=$5) RETURNING id",
-        [holdId, now(), irisSubject, reapprovalDecisionId, decision.rows[0].scope]
+        "UPDATE agent_compliance_holds SET lifted_at=$2, lifted_by=$3, lift_decision_id=$4 WHERE id=$1 AND lifted_at IS NULL AND scope=$5 RETURNING id",
+        [holdId, now(), identity.identityId, reapprovalDecisionId, decision.rows[0].scope]
       );
       if (!result.rows[0]) throw new Error("Hold not found or reapproval scope mismatch");
       await client.query(
@@ -186,6 +309,7 @@ function createAgentGovernanceStore(pool, options = {}) {
 
   return Object.freeze({
     provisionIdentity, authenticateToken, authorizeAction, recordActionOutcome,
+    issueOwnerApproval, recordIrisDecision, issueDelegatedGrant, approveSandboxTarget,
     createComplianceHold, liftComplianceHold,
   });
 }
