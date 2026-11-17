@@ -192,7 +192,7 @@ function createAgentGovernanceStore(pool, options = {}) {
         typeof scope !== "string" || !scope.trim() || typeof reason !== "string" || !reason.trim()) {
       throw new TypeError("Iris decision, exact scope, and reason are required");
     }
-    if (OWNER_RESERVED_ACTIONS.includes(action) && decision === "approve" && !action) {
+    if (decision === "approve" && OWNER_RESERVED_ACTIONS.includes(action) && !action) {
       throw new TypeError("Owner-reserved approval must name its action");
     }
     const expiry = expiresAt ? requireFutureExpiry(expiresAt, 24 * 60 * 60 * 1000) : null;
@@ -299,6 +299,7 @@ function createAgentGovernanceStore(pool, options = {}) {
         [holdId, now(), identity.identityId, reapprovalDecisionId, decision.rows[0].scope]
       );
       if (!result.rows[0]) throw new Error("Hold not found or reapproval scope mismatch");
+      await client.query("UPDATE agent_iris_decisions SET consumed_at=$2 WHERE id=$1 AND consumed_at IS NULL", [reapprovalDecisionId, now()]);
       await client.query(
         "INSERT INTO agent_audit_events (event_type, actor_agent, action, scope, decision, reason, correlation_id, details) VALUES ('compliance.hold_lifted','iris','compliance.reapprove',$1,'lifted','Iris reapproval recorded',$2,$3::jsonb)",
         [decision.rows[0].scope, crypto.randomUUID(), JSON.stringify({ holdId, reapprovalDecisionId })]
