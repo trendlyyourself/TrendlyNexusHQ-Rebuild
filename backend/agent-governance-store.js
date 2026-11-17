@@ -28,15 +28,24 @@ function createAgentGovernanceStore(pool, options = {}) {
     }
   }
 
-  async function provisionIdentity({ agentId, label, expiresAt }) {
+  async function provisionIdentity({ owner, agentId, label, expiresAt }) {
+    if (!owner || typeof owner.subject !== "string" || typeof options.isOwnerSubject !== "function" ||
+        !(await options.isOwnerSubject(owner.subject))) throw new Error("Authenticated owner authorization required");
     if (!AGENTS.includes(agentId)) throw new TypeError("Unknown agent identity");
     if (typeof label !== "string" || !label.trim()) throw new TypeError("Identity label is required");
     const secret = crypto.randomBytes(32).toString("base64url");
-    const result = await pool.query(
-      "INSERT INTO agent_service_identities (agent_id, credential_hash, label, expires_at) VALUES ($1,$2,$3,$4) RETURNING id, agent_id, expires_at",
-      [agentId, sha256(secret), label.trim(), expiresAt || null]
-    );
-    return { identity: result.rows[0], secret };
+    const identity = await withTransaction(async (client) => {
+      const result = await client.query(
+        "INSERT INTO agent_service_identities (agent_id, credential_hash, label, expires_at) VALUES ($1,$2,$3,$4) RETURNING id, agent_id, expires_at",
+        [agentId, sha256(secret), label.trim(), expiresAt || null]
+      );
+      await client.query(
+        "INSERT INTO agent_audit_events (event_type, actor_agent, action, decision, reason, correlation_id, details) VALUES ('identity.provisioned',NULL,'access.permission_change','provisioned','Owner provisioned a distinct agent service identity',$1,$2::jsonb)",
+        [crypto.randomUUID(), JSON.stringify({ identityId: result.rows[0].id, agentId, ownerSubject: owner.subject })]
+      );
+      return result.rows[0];
+    });
+    return { identity, secret };
   }
 
   async function authenticateToken(token) {
