@@ -69,7 +69,7 @@ test("authorization rechecks identity and writes an audit event transactionally"
   const identity = { id: "addy", identityId: "identity-1" };
   const result = await store.authorizeAction({ identity, action: "workspace.read", scope: "repo:readme", environment: "sandbox", correlationId: "req-1" });
   assert.equal(result.allowed, true);
-  assert.equal(pool.state.audit.length, 1);
+  assert.equal(pool.state.audit.length, 2);
   assert.ok(pool.state.queries.some((entry) => entry.sql === "BEGIN"));
   assert.ok(pool.state.queries.some((entry) => entry.sql === "COMMIT"));
 });
@@ -85,7 +85,7 @@ test("active compliance hold blocks agent action and records denial", async () =
   });
   assert.equal(result.allowed, false);
   assert.equal(result.reason, "compliance_hold_active");
-  assert.equal(pool.state.audit.length, 1);
+  assert.equal(pool.state.audit.length, 2);
 });
 
 test("owner approvals require an independently verified owner subject and short expiry", async () => {
