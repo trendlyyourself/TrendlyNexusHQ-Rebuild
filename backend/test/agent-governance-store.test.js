@@ -26,6 +26,11 @@ function fakePool() {
         async query(sql, params = []) {
           state.queries.push({ sql, params });
           if (sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK") return { rows: [] };
+          if (sql.includes("INSERT INTO agent_service_identities")) {
+            const row = { id: "identity-1", agent_id: params[0], expires_at: params[3] };
+            state.identities.push({ ...row, hash: params[1] });
+            return { rows: [row] };
+          }
           if (sql.includes("SELECT id, agent_id FROM agent_service_identities WHERE id=")) {
             const row = state.identities.find((item) => item.id === params[0] && item.agent_id === params[1]);
             return { rows: row ? [{ id: row.id, agent_id: row.agent_id }] : [] };
@@ -43,8 +48,8 @@ function fakePool() {
 
 test("identity provisioning stores only a one-way credential hash and returns secret once", async () => {
   const pool = fakePool();
-  const store = createAgentGovernanceStore(pool);
-  const result = await store.provisionIdentity({ agentId: "addy", label: "Addy service" });
+  const store = createAgentGovernanceStore(pool, { isOwnerSubject: async (subject) => subject === "owner" });
+  const result = await store.provisionIdentity({ owner: { subject: "owner" }, agentId: "addy", label: "Addy service" });
   assert.equal(result.identity.agent_id, "addy");
   assert.equal(pool.state.identities[0].hash, hashAgentCredential(result.secret));
   assert.notEqual(pool.state.identities[0].hash, result.secret);
@@ -53,14 +58,14 @@ test("identity provisioning stores only a one-way credential hash and returns se
 });
 
 test("unknown identities cannot be provisioned", async () => {
-  const store = createAgentGovernanceStore(fakePool());
-  await assert.rejects(store.provisionIdentity({ agentId: "root", label: "bad" }), /Unknown agent/);
+  const store = createAgentGovernanceStore(fakePool(), { isOwnerSubject: async () => true });
+  await assert.rejects(store.provisionIdentity({ owner: { subject: "owner" }, agentId: "root", label: "bad" }), /Unknown agent/);
 });
 
 test("authorization rechecks identity and writes an audit event transactionally", async () => {
   const pool = fakePool();
-  const store = createAgentGovernanceStore(pool);
-  await store.provisionIdentity({ agentId: "addy", label: "Addy" });
+  const store = createAgentGovernanceStore(pool, { isOwnerSubject: async () => true });
+  await store.provisionIdentity({ owner: { subject: "owner" }, agentId: "addy", label: "Addy" });
   const identity = { id: "addy", identityId: "identity-1" };
   const result = await store.authorizeAction({ identity, action: "workspace.read", scope: "repo:readme", environment: "sandbox", correlationId: "req-1" });
   assert.equal(result.allowed, true);
@@ -72,8 +77,8 @@ test("authorization rechecks identity and writes an audit event transactionally"
 test("active compliance hold blocks agent action and records denial", async () => {
   const pool = fakePool();
   pool.state.hold = true;
-  const store = createAgentGovernanceStore(pool);
-  await store.provisionIdentity({ agentId: "addy", label: "Addy" });
+  const store = createAgentGovernanceStore(pool, { isOwnerSubject: async () => true });
+  await store.provisionIdentity({ owner: { subject: "owner" }, agentId: "addy", label: "Addy" });
   const result = await store.authorizeAction({
     identity: { id: "addy", identityId: "identity-1" },
     action: "workspace.read", scope: "repo:readme", environment: "sandbox", correlationId: "req-hold",
