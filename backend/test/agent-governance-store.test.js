@@ -94,6 +94,10 @@ test("owner approvals require an independently verified owner subject and short 
     owner: { subject: "untrusted" }, action: "repository.merge", scope: "release:1",
     environment: "sandbox", reason: "reviewed", expiresAt: new Date(now.getTime() + 60_000),
   }), /owner authorization required/);
+  await assert.rejects(store.issueOwnerApproval({
+    owner: { subject: "verified-owner-subject" }, action: "production.change", scope: "release:1",
+    environment: "production", reason: "missing explicit flag", expiresAt: new Date(now.getTime() + 60_000),
+  }), /explicitly authorize/);
   const approval = await store.issueOwnerApproval({
     owner: { subject: "verified-owner-subject" }, action: "repository.merge", scope: "release:1",
     environment: "sandbox", reason: "reviewed", expiresAt: new Date(now.getTime() + 60_000),
