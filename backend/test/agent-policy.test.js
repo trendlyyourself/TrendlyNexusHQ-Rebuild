@@ -31,6 +31,13 @@ test("Iris can stop work but cannot grant owner-reserved authority", () => {
     "role_not_granted");
 });
 
+test("Iris cannot lift a compliance hold without a verified scoped reapproval record", () => {
+  assert.equal(evaluateAgentAction({ agent: "iris", action: "compliance.reapprove", scope: "finding:9" }).reason,
+    "verified_reapproval_record_required");
+  assert.equal(evaluateAgentAction({ agent: "iris", action: "compliance.reapprove", scope: "finding:9",
+    irisApproval }).allowed, true);
+});
+
 test("compliance hold blocks every non-Iris role", () => {
   assert.equal(evaluateAgentAction({ agent: "addy", action: "workspace.read", complianceHold: true }).reason,
     "compliance_hold_active");
