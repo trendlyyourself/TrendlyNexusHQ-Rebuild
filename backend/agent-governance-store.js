@@ -91,7 +91,7 @@ function createAgentGovernanceStore(pool, options = {}) {
         }
       } else if (action === "customer.support.send" || action === "compliance.reapprove") {
         const decision = await client.query(
-          "SELECT id FROM agent_iris_decisions WHERE decision=$1 AND scope=$2 AND (action=$3 OR action IS NULL) AND consumed_at IS NULL AND (expires_at IS NULL OR expires_at>$4) ORDER BY created_at DESC LIMIT 1 FOR UPDATE",
+          "SELECT id FROM agent_iris_decisions WHERE decision=$1 AND scope=$2 AND action=$3 AND consumed_at IS NULL AND (expires_at IS NULL OR expires_at>$4) ORDER BY created_at DESC LIMIT 1 FOR UPDATE",
           [action === "compliance.reapprove" ? "reapprove" : "approve", scope, action, now()]
         );
         if (decision.rows[0]) {
@@ -197,6 +197,9 @@ function createAgentGovernanceStore(pool, options = {}) {
     }
     if (decision === "approve" && OWNER_RESERVED_ACTIONS.includes(action) && !action) {
       throw new TypeError("Owner-reserved approval must name its action");
+    }
+    if (["approve", "reapprove"].includes(decision) && !expiresAt) {
+      throw new TypeError("Iris approvals and reapprovals must expire");
     }
     const expiry = expiresAt ? requireFutureExpiry(expiresAt, 24 * 60 * 60 * 1000) : null;
     return withTransaction(async (client) => {
