@@ -115,8 +115,7 @@ function evaluateAgentAction(input = {}) {
     if (action === "production.change" && environment !== "production") {
       return deny("production_environment_mismatch");
     }
-    if (action !== "production.change" && environment === "production" &&
-        !ownerApproval.productionExplicit) {
+    if (environment === "production" && !ownerApproval.productionExplicit) {
       return deny("explicit_production_approval_required");
     }
     if (!irisApproval || irisApproval.verified !== true || !irisApproval.approvalId) {
