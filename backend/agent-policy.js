@@ -22,7 +22,7 @@ const OWNER_RESERVED_ACTIONS = new Set([
 ]);
 
 const ROLE_ACTIONS = Object.freeze({
-  addy: new Set(["workspace.read", "task.delegate", "engineering.read", "engineering.write", "operations.execute"]),
+  addy: new Set(["workspace.read", "task.delegate", "engineering.read", "engineering.write", "operations.execute", "production.change", "database.mutate", "database.permission_change", "repository.merge", "deployment.promote", "deployment.rollback", "payment.live_configure", "payment.live_transaction", "access.permission_change", "external.commitment"]),
   iris: new Set(["workspace.read", "compliance.review", "compliance.stop", "compliance.reapprove"]),
   donny: new Set(["workspace.read", "security.review", "security.verify", "security.scan"]),
   axel: new Set(["workspace.read", "research.read", "strategy.recommend"]),
