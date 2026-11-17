@@ -31,6 +31,7 @@ function fakePool() {
             state.identities.push({ ...row, hash: params[1] });
             return { rows: [row] };
           }
+          if (sql.includes("INSERT INTO agent_owner_approvals")) return { rows: [{ id: "owner-approval-1", action: params[1], scope: params[2], environment: params[3], expires_at: params[6] }] };
           if (sql.includes("SELECT id, agent_id FROM agent_service_identities WHERE id=")) {
             const row = state.identities.find((item) => item.id === params[0] && item.agent_id === params[1]);
             return { rows: row ? [{ id: row.id, agent_id: row.agent_id }] : [] };
