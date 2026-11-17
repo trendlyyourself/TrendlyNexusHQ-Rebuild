@@ -174,6 +174,9 @@ function createAgentGovernanceStore(pool, options = {}) {
         typeof environment !== "string" || !environment.trim() || typeof reason !== "string" || !reason.trim()) {
       throw new TypeError("Exact owner approval action, scope, environment, and reason are required");
     }
+    if (environment === "production" && productionExplicit !== true) {
+      throw new Error("Production approval must explicitly authorize the production environment");
+    }
     const expiry = requireFutureExpiry(expiresAt, 15 * 60 * 1000);
     const result = await pool.query(
       "INSERT INTO agent_owner_approvals (owner_subject, action, scope, environment, production_explicit, reason, expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, action, scope, environment, expires_at",
@@ -270,6 +273,45 @@ function createAgentGovernanceStore(pool, options = {}) {
     return result.rows[0];
   }
 
+
+  async function revokeAgentIdentity({ owner, identityId, reason }) {
+    if (!owner || typeof owner.subject !== "string" || typeof options.isOwnerSubject !== "function" ||
+        !(await options.isOwnerSubject(owner.subject))) throw new Error("Authenticated owner authorization required");
+    if (typeof reason !== "string" || !reason.trim()) throw new TypeError("Revocation reason required");
+    return withTransaction(async (client) => {
+      const result = await client.query(
+        "UPDATE agent_service_identities SET revoked_at=$2 WHERE id=$1 AND revoked_at IS NULL RETURNING id, agent_id",
+        [identityId, now()]
+      );
+      if (!result.rows[0]) throw new Error("Active identity not found");
+      await client.query(
+        "INSERT INTO agent_audit_events (event_type, actor_agent, action, decision, reason, correlation_id, details) VALUES ('identity.revoked',NULL,'access.permission_change','revoked',$1,$2,$3::jsonb)",
+        [reason.trim(), crypto.randomUUID(), JSON.stringify({ identityId, agentId: result.rows[0].agent_id, ownerSubject: owner.subject })]
+      );
+      return result.rows[0];
+    });
+  }
+
+  async function revokeDelegatedGrant({ grantor, grantId, reason }) {
+    const isOwner = grantor && typeof grantor.subject === "string" &&
+      typeof options.isOwnerSubject === "function" && await options.isOwnerSubject(grantor.subject);
+    const isAddy = grantor && grantor.id === "addy" && grantor.identityId;
+    if (!isOwner && !isAddy) throw new Error("Authenticated owner or Addy required");
+    if (typeof reason !== "string" || !reason.trim()) throw new TypeError("Revocation reason required");
+    return withTransaction(async (client) => {
+      const result = await client.query(
+        "UPDATE agent_delegated_grants SET revoked_at=$2 WHERE id=$1 AND revoked_at IS NULL AND ($3::boolean OR grantor_subject=$4) RETURNING id, grantee_agent, action, scope",
+        [grantId, now(), Boolean(isOwner), isAddy ? grantor.identityId : grantor.subject]
+      );
+      if (!result.rows[0]) throw new Error("Grant not found or grantor not authorized");
+      await client.query(
+        "INSERT INTO agent_audit_events (event_type, actor_agent, action, scope, decision, reason, correlation_id, details) VALUES ('delegation.revoked',$1,'task.delegate',$2,'revoked',$3,$4,$5::jsonb)",
+        [isAddy ? "addy" : null, result.rows[0].scope, reason.trim(), crypto.randomUUID(), JSON.stringify({ grantId, granteeAgent: result.rows[0].grantee_agent, action: result.rows[0].action })]
+      );
+      return result.rows[0];
+    });
+  }
+
   async function createComplianceHold({ identity, scope, reason, evidenceRef }) {
     requireIdentity(identity, "iris");
     if (typeof reason !== "string" || !reason.trim()) throw new TypeError("Hold reason required");
@@ -311,7 +353,7 @@ function createAgentGovernanceStore(pool, options = {}) {
   return Object.freeze({
     provisionIdentity, authenticateToken, authorizeAction, recordActionOutcome,
     issueOwnerApproval, recordIrisDecision, issueDelegatedGrant, approveSandboxTarget,
-    createComplianceHold, liftComplianceHold,
+    revokeAgentIdentity, revokeDelegatedGrant, createComplianceHold, liftComplianceHold,
   });
 }
 
